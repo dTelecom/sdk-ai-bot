@@ -1,0 +1,53 @@
+# Compiled Object files, Static and Dynamic libs (Shared Objects)
+*.o
+*.a
+*.so
+
+tests
+
+# Folders
+_obj
+_test
+bin
+vendor
+
+# local env files
+.env
+.env.*
+.envrc
+
+# Architecture specific extensions/prefixes
+*.[568vq]
+[568vq].out
+
+*.cgo1.go
+*.cgo2.c
+_cgo_defun.c
+_cgo_gotypes.go
+_cgo_export.*
+
+_testmain.go
+
+*.exe
+*.test
+*.prof
+
+# IDE system files
+.idea
+.vscode
+.run
+
+# vendoring cache directory
+.cache
+
+# Go workspace files
+go.work
+go.work.sum
+
+.helm_tmp
+
+.DS_Store
+
+.Dockerfile.migrations
+
+.s3cfg
