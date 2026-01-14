@@ -2,8 +2,10 @@ package pkg
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"sync"
 )
 
 type Pipeline struct {
@@ -11,6 +13,7 @@ type Pipeline struct {
 	textProcessor TextProcessor
 	textToAudio   TextToSpeech
 	questions     chan TextChunk
+	mu            sync.Mutex
 }
 
 func NewPipeline(
@@ -25,15 +28,22 @@ func NewPipeline(
 	}
 }
 
-func (b *Pipeline) Start(ctx context.Context) (<-chan AudioChunk, error) {
-	b.questions = make(chan TextChunk)
+func (p *Pipeline) Start(ctx context.Context) (<-chan AudioChunk, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
-	answerChunks, err := b.textProcessor.Process(ctx, b.questions)
+	if p.questions != nil {
+		return nil, errors.New("pipeline has been started")
+	}
+
+	p.questions = make(chan TextChunk)
+
+	answerChunks, err := p.textProcessor.Process(ctx, p.questions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to answer: %w", err)
 	}
 
-	chunks, err := b.textToAudio.Synthesize(ctx, answerChunks)
+	chunks, err := p.textToAudio.Synthesize(ctx, answerChunks)
 	if err != nil {
 		return nil, fmt.Errorf("failed to synthesize: %w", err)
 	}
@@ -41,13 +51,36 @@ func (b *Pipeline) Start(ctx context.Context) (<-chan AudioChunk, error) {
 	return chunks, nil
 }
 
-func (b *Pipeline) AddParticipant(ctx context.Context, name string, chunks <-chan AudioChunk) error {
-	speechTokens, err := b.audioToText.Transcribe(ctx, chunks)
+func (p *Pipeline) Stop() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.questions == nil {
+		return errors.New("pipeline has not been started")
+	}
+
+	close(p.questions)
+
+	p.questions = nil
+
+	return nil
+}
+
+func (p *Pipeline) AddParticipant(ctx context.Context, name string, chunks <-chan AudioChunk) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.questions == nil {
+		return errors.New("pipeline has not been started")
+	}
+
+	speechTokens, err := p.audioToText.Transcribe(ctx, chunks)
 	if err != nil {
 		return fmt.Errorf("failed to transcribe: %w", err)
 	}
 
 	// Запускаем горутину для обработки токенов речи
+	questions := p.questions
 	go func() {
 		var stringTokens []string
 		for {
@@ -58,7 +91,7 @@ func (b *Pipeline) AddParticipant(ctx context.Context, name string, chunks <-cha
 					if len(stringTokens) > 0 {
 						question := strings.Join(stringTokens, " ")
 						select {
-						case b.questions <- &TextContentChunk{question, name}:
+						case questions <- &TextContentChunk{question, name}:
 						case <-ctx.Done():
 							return
 						}
@@ -76,7 +109,7 @@ func (b *Pipeline) AddParticipant(ctx context.Context, name string, chunks <-cha
 						switch controlToken.Code {
 						case SpeechControlSpeechStarted:
 							select {
-							case b.questions <- &TextControlChunk{TextControlClear, name}:
+							case questions <- &TextControlChunk{TextControlClear, name}:
 							case <-ctx.Done():
 								return
 							}
@@ -84,7 +117,7 @@ func (b *Pipeline) AddParticipant(ctx context.Context, name string, chunks <-cha
 							if len(stringTokens) > 0 {
 								question := strings.Join(stringTokens, " ")
 								select {
-								case b.questions <- &TextContentChunk{question, name}:
+								case questions <- &TextContentChunk{question, name}:
 								case <-ctx.Done():
 									return
 								}

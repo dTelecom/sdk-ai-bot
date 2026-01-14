@@ -50,14 +50,31 @@ func main() {
 		logger.Fatal("DTELECOM_URL required")
 	}
 
-	err = a.Connect(url, roomToken)
+	disconnectedCh := make(chan interface{})
+	callback := agent.NewCallback()
+	callback.OnDisconnected = func() {
+		logger.Info("agent disconnected")
+		close(disconnectedCh)
+	}
+
+	disconnect, err := a.Connect(url, roomToken, callback)
 	if err != nil {
 		logger.Error("failed to connect", zap.Error(err))
 	}
 
 	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	<-sigs
+	defer close(sigs)
+
+	go func() {
+		signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+		sig, ok := <-sigs
+		logger.Info("received OS signal", zap.String("name", sig.String()))
+		if ok {
+			disconnect()
+		}
+	}()
+
+	<-disconnectedCh
 }
 
 func buildTextProcessor(logger *zap.Logger) (pkg.TextProcessor, error) {

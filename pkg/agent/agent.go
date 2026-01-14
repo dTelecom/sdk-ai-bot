@@ -33,6 +33,7 @@ type config struct {
 type Agent struct {
 	logger   *zap.Logger
 	room     *lksdk.Room
+	callback *Callback
 	pipeline *pkg.Pipeline
 }
 

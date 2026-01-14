@@ -17,7 +17,7 @@ import (
 )
 
 func Test_Answer(t *testing.T) {
-	err := godotenv.Load("../../../../.env")
+	err := godotenv.Load("../../../.env")
 	require.NoError(t, err)
 
 	config := chatgpt.DefaultConfig(os.Getenv("CHATGPT_API_KEY"))
